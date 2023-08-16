@@ -1,0 +1,419 @@
+---
+title: "Predicting Used Car Prices"
+date: ""
+output:
+  html_document: 
+    theme: readable
+    toc: yes
+  pdf_document: default
+urlcolor: cyan
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+## Dataset 
+
+The dataset we are going to use is the "Used Car Listings: Features and Price Prediction". It was published by 'TUGBERK KARAN' on Kaggle. He is a data scientist, a mechanical engineer, and a MBA student at MCBU.
+
+The dataset has been split into training and testing data, and we will be using the variables to predict the price of a car.
+The training data and testing data have 19,109 observations and 4,778 observations respectively, and both datasets have 36 variables, which are listed below.
+
+\
+Feature Descriptions
+
+-   brand: Brand of the car.
+-   model: Model of the car.
+-   year: Year of production of the car.
+-   mileage: Mileage of the car.
+-   engine: Information about the car's engine.
+-   engine_size: Size of the car's engine.
+-   transmission: Type of transmission of the car.
+-   automatic_transmission: A binary value indicating the presence of automatic transmission (1: Yes, 0: No).
+-   fuel_type: Fuel type of the car.
+-   drivetrain: Drivetrain type of the car.
+-   min_mpg: Minimum fuel efficiency of the car.
+-   max_mpg: Maximum fuel efficiency of the car.
+-   damaged: A binary value indicating the presence of damage in the car (1: Yes, 0: No).
+-   first_owner: Is the car a 1-owner vehicle? (1: Yes, 0: No).
+-   personal_using: Is the car for personal use only? (1: Yes, 0: No).
+-   turbo: A binary value indicating the presence of a turbocharger in the car (1: Yes, 0: No).
+-   alloy_wheels: Are there alloy wheels on the car? (1: Yes, 0: No).
+-   adaptive_cruise_control: A binary value indicating the presence of adaptive cruise control (1: Yes, 0: No).
+-   navigation_system: A binary value indicating the presence of a navigation system (1: Yes, 0: No).
+-   power_liftgate: A binary value indicating the presence of a power liftgate (1: Yes, 0: No).
+-   backup_camera: A binary value indicating the presence of a backup camera (1: Yes, 0: No).
+-   keyless_start: A binary value indicating the presence of keyless start system (1: Yes, 0: No).
+-   remote_start: A binary value indicating the presence of a remote start system (1: Yes, 0: No).
+-   sunroof/moonroof: A binary value indicating the presence of a sunroof/moonroof (1: Yes, 0: No).
+-   automatic_emergency_braking: A binary value indicating the presence of automatic emergency
+-   braking system (1: Yes, 0: No).
+-   stability_control: A binary value indicating the presence of stability
+-   control system (1: Yes, 0: No).
+-   leather_seats: Are there leather seats in the car? (1: Yes, 0: No).
+-   memory_seat: Are there memory seats in the car? (1: Yes, 0: No).
+-   third_row_seating: A binary value indicating the presence of third row seating (1: Yes, 0: No).
+-   apple_car_play/android_auto: A binary value indicating the presence of Apple CarPlay / Android Auto integration (1: Yes, 0: No).
+-   bluetooth: A binary value indicating the presence of Bluetooth connectivity (1: Yes, 0: No).
+-   usb_port: A binary value indicating the presence of USB ports (1: Yes, 0: No).
+-   heated_seats: Are there heated seats in the car? (1: Yes, 0: No).
+-   interior_color: Interior color of the car. exterior_color: Exterior color of the car.
+-   price: Price of the car. This feature is the target feature of this dataset.
+
+Link to data:
+[<https://www.kaggle.com/datasets/tugberkkaran/used-car-listings-features-and-prices-carscom>]
+
+## Purpose
+The purpose of our analysis on this dataset is to create a model that can accurately predict the price of a car based on other attributes about them. While prediction is the main goal of the model, this model should also not be too complex and be able to be reasonably explained by a human. This is interesting as we can explore how various characteristics of a car can have either a large or small effect on the selling price.
+
+We will use techniques learned in class to analyze the impact of different variables to see how the price of a car is affected and create a pricing model for used cars. We are creating this model in order to effectively predict the selling price of a used car based on the attributes explained above. This can be useful as one can predict the price of their own car using the model we create. After using numerous methods to select the best model, the final goal of our model will be to predict using the variables that have the largest effect on our response variable of price.
+
+# Methods
+
+## Data cleanup
+
+Load the data.
+
+```{r message=FALSE, warning=FALSE}
+library(readr)
+library(faraway)
+library(lmtest)
+library(knitr)
+test_data = read.csv("test.csv")
+train_data = read.csv("train.csv")
+```
+
+We recategorized fuel types to reduce uncommon levels and redundancies and confirmed that levels in both train and test data match.
+
+```{r}
+train_data$fuel_type[train_data$fuel_type == "flex_fuel"] = "E85 Flex Fuel"
+train_data$fuel_type[train_data$fuel_type == "Premium Unleaded"] = "Gasoline"
+for (name in c("", "B", "Compressed Natural Gas")) {
+  test_data$fuel_type[test_data$fuel_type == name] = "Unknown"
+  train_data$fuel_type[train_data$fuel_type == name] = "Unknown"
+}
+levels(as.factor(test_data$fuel_type)) == levels(as.factor(train_data$fuel_type))
+```
+
+Many categorical and numerical features are loaded as strings, but are coerced
+as factor and numerical objects, respectively.
+
+```{r warning=FALSE}
+# All names that are numeric
+numeric_names = c(
+  "price", "mileage", "engine_size", "min_mpg", "max_mpg", "year"
+)
+
+# Names that are not numeric are factors
+factor_names = setdiff(names(train_data), numeric_names) 
+
+# Coerce factor variables and omit those with more than 20 levels
+n_factors = length(factor_names)
+omit_factor_index = rep(FALSE, n_factors)
+cutoff_levels = 20
+for (i in 1:n_factors){
+  factor_name = factor_names[i]
+  train_data[[factor_name]] = new_factor = as.factor(train_data[[factor_name]])
+  test_data[[factor_name]] = as.factor(test_data[[factor_name]])
+  n_levels = length(
+    levels(new_factor)
+  )
+  omit_factor_index[i] = n_levels > cutoff_levels
+}
+
+# Coerce numerical variables
+n_numerics = length(numeric_names)
+for (i in 1:n_numerics) {
+  numeric_name = numeric_names[i]
+  train_data[[numeric_name]] = as.numeric(train_data[[numeric_name]]) 
+  test_data[[numeric_name]] = as.numeric(test_data[[numeric_name]]) 
+}
+
+# Clean data
+omitted_names = factor_names[omit_factor_index]
+good_factor_names = factor_names[!omit_factor_index]
+train_data = subset(
+  train_data, select = c(good_factor_names, numeric_names)
+)
+test_data = subset(
+  test_data, select = c(good_factor_names, numeric_names)
+)
+test_data = test_data[!grepl("E85 Flex Fuel", test_data$fuel_type), ]
+
+#remove clear outlier for engine size. (value was 390 when next highest was 8)
+train_data = train_data[!grepl(390, train_data$engine_size), ]
+train_data = na.omit(train_data)
+test_data = na.omit(test_data)
+```
+
+Note that `r omitted_names` all have over `r cutoff_levels` levels and were all
+omitted to avoid unreasonable model complexity. Also note that a subset of strictly numeric predictors was created so that the collinearity of these predictors may be analyzed in the future. 
+
+
+## Model creation
+
+Make a preliminary additive model and remove any outliers for better predictive power
+(as determined by the adjusted $R^2$):
+
+```{r}
+model = lm(price ~ ., data = train_data)
+
+# Remove outliers and refit
+rst = abs(rstandard(model))
+train_data = train_data[rst > 2,]
+train_data = na.omit(train_data) # Need to re-omit NA after dropping outliers
+model = lm(price ~ ., data = train_data)
+
+submodel = step(model, direction = 'both', trace = 0)
+summary(submodel)$r.squared
+```
+
+Look at normality and constant variance assumptions:
+
+```{r}
+diagnostics = function(
+    model, pcol = 'grey', lcol = 'dodgerblue',
+    alpha = 0.05, plotit=TRUE, testit=TRUE
+  ) {
+  rm = resid(model)
+  if (plotit) {
+    par(
+      mfrow = c(1,2)
+    )
+    fm = fitted(model)
+    plot(
+      fm, rm, col = pcol, pch = 20, xlab = "Fitted", ylab = "Residuals",
+      main = "Residuals vs fitted predictor"
+    )
+    abline(h = 0, col = lcol, lwd = 2)
+    qqnorm(rm, main = "Normal Q-Q Plot", col = pcol, pch=20)
+    qqline(rm, col = lcol, lwd = 2)
+  }
+  if (testit) {
+    st = shapiro.test(rm)
+    bp_pval = bptest(model)$p.value
+    st_pval = st$p.value
+    sm = summary(model)
+    return (
+      list(
+        st_pval = st_pval,
+        st_decision = ifelse(st_pval < alpha, 'Reject', 'Fail to Reject'),
+        bp_pval = bp_pval,
+        bp_decision = ifelse(bp_pval < alpha, 'Reject', 'Fail to Reject'),
+        r.squared = sm$r.squared,
+        adj.r.squared = sm$adj.r.squared
+      )
+    )
+  }
+}
+diagnostics(submodel)
+```
+
+It looks like the normality and constant variance assumptions are suspect. An 
+attempt to stabilize the variance is made by transforming the response with log. 
+However, this model does not lead to any significant improvements. For simplicity,
+we do not use any transformation as our baseline in future models.
+
+```{r}
+transformed_model = lm(
+  log(price) ~ fuel_type + drivetrain + damaged + turbo + 
+    alloy_wheels + navigation_system + stability_control + 
+    leather_seats + memory_seat + third_row_seating +
+    heated_seats + mileage + engine_size + max_mpg + year,
+   data = train_data
+)
+diagnostics(transformed_model)
+```
+
+Adding interactions markedly increases the adjusted $R^2$ to 0.894. It is also worth noting that we failed to reject the Breusch-Pagan (BP) test, which means that the equal variance assumption is no longer suspect. We have removed `log(price)` from later models since using `price` as the response increases the adjusted $R^2$.
+
+```{r}
+start_model = lm(
+  price ~ fuel_type + drivetrain + damaged + turbo + 
+    alloy_wheels + navigation_system + stability_control + 
+    leather_seats + memory_seat + third_row_seating +
+    heated_seats + mileage + engine_size + max_mpg + year,
+   data = train_data
+)
+interaction2_model = step(
+  start_model, 
+  scope = price ~ (fuel_type + drivetrain + damaged + turbo + 
+    alloy_wheels + navigation_system + stability_control + 
+    leather_seats + memory_seat + third_row_seating +
+    heated_seats + mileage + engine_size + max_mpg + year)^2,
+  direction = 'both',
+  trace = 0,
+)
+diagnostics(interaction2_model)
+```
+
+However, adding 3-way interactions does not significantly increase the adjusted
+$R^2$, so 3-way interactions are not included in the final model.
+
+```{r}
+interaction3_model = step(
+  start_model, 
+  scope = price ~ (fuel_type + drivetrain + damaged + turbo + 
+    alloy_wheels + navigation_system + stability_control + 
+    leather_seats + memory_seat + third_row_seating +
+    heated_seats + mileage + engine_size + max_mpg + year)^3,
+  direction = 'both',
+  trace = 0,
+)
+diagnostics(interaction3_model)
+```
+
+Addition of polynomial terms, however, significantly increases the adjusted $R^2$ to 0.926.
+This would imply that there is a quadratic relationship between the particular predictors and response. 
+
+```{r}
+poly_model = step(
+  lm(price ~ (fuel_type + drivetrain + damaged + turbo + 
+    alloy_wheels + navigation_system + stability_control + 
+    leather_seats + memory_seat + third_row_seating +
+    heated_seats + mileage + poly(engine_size, 2)
+    + poly(max_mpg, 2) + year)^2, data=train_data), 
+  direction = 'backward',
+  trace = 0,
+)
+diagnostics(poly_model)
+```
+
+Try removing highly influential data points (but this results in a lower adjusted $R^2$ of 0.751).
+
+```{r}
+mask = cooks.distance(model) > 4 / length(cooks.distance(model))
+train_data_low_influence = train_data[!mask, ] 
+poly_model_no_influential = step(
+  lm(price ~ (turbo + alloy_wheels + navigation_system
+   + automatic_transmission + automatic_emergency_braking
+   + stability_control + leather_seats 
+   + usb_port + apple_car_play.android_auto
+   + poly(engine_size, 2) + poly(min_mpg, 2) + year)^2,
+   data = train_data_low_influence), 
+  direction = 'backward',
+  trace = 0,
+)
+diagnostics(poly_model_no_influential)
+```
+
+Look for collinearity issues:
+
+```{r}
+numeric_data = subset(train_data, select = numeric_names)
+
+pairs(numeric_data,
+      pch = 20, 
+      col = "dodgerblue",
+      main = "identifying collinearity")
+
+cor_val = cor(train_data$min_mpg, train_data$max_mpg)
+```
+
+From the graph above it appears that `min mpg` and `max mpg` are colinear with each other. These two predictors have a correlation coefficient of `r cor_val`. In previous models, the `step()` function has chosen `min mpg` and removed `max mpg`. Collinearity does not seem to be the problem for the model we are trying to create.
+
+The RMSE for `train_data` and `test_data` were calculated for each model.
+
+```{r warning=FALSE}
+# Function to calculate RMSE
+rmse = function(actual, predicted, is_log_trasformed=FALSE) {
+  if (is_log_trasformed) {
+    # Need to use exp to get response in price, not log(price)
+    residuals = actual - exp(predicted)
+  }
+  else {
+    residuals = actual - predicted
+  }
+  return (
+    sqrt(mean(( actual - predicted )^2 ))
+  )
+}
+
+#calculate all train errors
+train_error = c(
+  rmse(train_data$price, predict(model, train_data)),
+  rmse(train_data$price, predict(submodel, train_data)),
+  rmse(train_data$price, predict(transformed_model, train_data), is_log_trasformed=TRUE),
+  rmse(train_data$price, predict(start_model, train_data)),
+  rmse(train_data$price, predict(interaction2_model, train_data)),
+  rmse(train_data$price, predict(interaction3_model, train_data)),
+  rmse(train_data$price, predict(poly_model, train_data)),
+  rmse(train_data$price, predict(poly_model_no_influential, train_data))
+)
+
+#calculate all test errors
+#test_data = test_data[!grepl("E85 Flex Fuel", test_data$fuel_type), ]
+test_data = test_data[!grepl("Unknown", test_data$fuel_type), ]
+test_error = c(
+  rmse(test_data$price, predict(model, newdata = test_data)),
+  rmse(test_data$price, predict(submodel, newdata = test_data)),
+  rmse(test_data$price, predict(transformed_model, newdata = test_data), is_log_trasformed=TRUE),
+  rmse(test_data$price, predict(start_model, newdata = test_data)),
+  rmse(test_data$price, predict(interaction2_model, newdata = test_data)),
+  rmse(test_data$price, predict(interaction3_model, newdata = test_data)),
+  rmse(test_data$price, predict(poly_model, newdata = test_data)),
+  rmse(test_data$price, predict(poly_model_no_influential, newdata = test_data))
+)
+```
+
+The LOOCV-RMSE for the models we have created were calculated.
+
+```{r}
+calc_loocv_rmse = function(model, is_log_trasformed=FALSE) {
+  hatvalues = hatvalues(model) # Hat values do not depend on response
+  if (is_log_trasformed) {
+    # Need to use exp to get response in price, not log(price)
+    residuals = exp(fitted(model)) - train_data$price 
+  }
+  else {
+    residuals = resid(model)  
+  }
+  return (
+    sqrt(mean((residuals / (1 - hatvalues)) ^ 2))
+  )
+}
+LOOCV_error = c(
+  calc_loocv_rmse(model),
+  calc_loocv_rmse(submodel),
+  calc_loocv_rmse(transformed_model, is_log_trasformed=TRUE),
+  calc_loocv_rmse(start_model),
+  calc_loocv_rmse(interaction2_model),
+  calc_loocv_rmse(interaction3_model),
+  calc_loocv_rmse(poly_model),
+  calc_loocv_rmse(poly_model_no_influential)
+)
+```
+
+# Results
+
+The output for the train RMSEs and test RMSEs for each model can be seen below.
+
+```{r}
+price_models = c("`model`", "`submodel`", "`transformed_model`", "`start_model`", "`interaction2_model`", "`interaction3_model`", "`poly_model`", "`poly_model_no_influential`")
+price_results = data.frame(price_models, train_error, test_error, LOOCV_error)
+
+kable(
+  x = price_results,
+  format = "pipe",
+  col.names = c("Model", "Train RMSE", "Test RMSE", "LOOCV RMSE"),
+  padding = 10
+)
+
+```
+
+Based on the diagnostics and the resulting RMSE table, the model we have selected is the `transformed_model`.
+
+# Discussion
+
+The `tranformed_model` is a good candidate to predict used car prices. This is because the test RMSE is the lowest of all the created models. Also, the LOOCV RMSE is very similar to the other models (as shown in the table above). Because the primary purpose of this model is to predict, the test RMSE being the lowest is the main reason why this model was chosen, as the size penalties are not entirely necessary. Because the test RMSE is the lowest, it can be said that the errors of the predicted and actual car price values are much smaller in this model than any other. Therefore, considering the extensive range of this data spanning from 1970 to 2023, this model can be useful for predicting used car prices and someone using this model may get reasonably accurate values for their car if they were going to buy/sell it. Of course, the predicted values may need to be adjusted for inflation in the future, and the model may need to be retrained with new data as newer car models are released.
+
+Other models with interactions and polynomial predictors resulted in high adjusted $R^2$ values (e.g., 0.926 for the `poly_model`). This would imply that the variation in the price data is very well explained by the predictors in this model. However, the train RMSE and the LOOCV RMSE are much greater for these more complex models. This result suggests that interaction models and higher order models are overfitted to the data.
+While the transformed model is the best model for general prediction outside the training data set, other polynomial and interaction models may be worth exploring more exhaustively within a future study. 
+
+
